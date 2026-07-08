@@ -4,7 +4,7 @@
 
 本仓库是完整的**端到端微调工程**：数据爬取后处理 → 多模型蒸馏 → 训练 → 评估 → 数据消融迭代。
 
-> 微调后的 LoRA 适配器已发布至 HuggingFace：**[待填：HF 模型链接]**
+> 微调后的 LoRA 适配器已发布至 HuggingFace：**https://huggingface.co/junshengma/qwen2.5-7b-gzh-writing-qlora**
 
 ---
 
