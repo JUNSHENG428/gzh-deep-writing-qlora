@@ -84,6 +84,9 @@ class WriteRequest(BaseModel):
     max_new_tokens: int = Field(3072, ge=256, le=4096)
     temperature: float = Field(0.7, ge=0.1, le=1.5)
     top_p: float = Field(0.9, ge=0.1, le=1.0)
+    # 抗重复退化：penalty 越大越不易复读；no_repeat_ngram_size=N 表示 N-gram 不重复
+    repetition_penalty: float = Field(1.15, ge=1.0, le=2.0)
+    no_repeat_ngram_size: int = Field(4, ge=0, le=10)
 
 
 def build_inputs(req: WriteRequest):
@@ -116,7 +119,8 @@ async def generate(req: WriteRequest):
                 max_new_tokens=req.max_new_tokens,
                 temperature=req.temperature,
                 top_p=req.top_p,
-                repetition_penalty=1.05,
+                repetition_penalty=req.repetition_penalty,
+                no_repeat_ngram_size=req.no_repeat_ngram_size,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
             )
@@ -138,7 +142,8 @@ async def generate_stream(req: WriteRequest):
             max_new_tokens=req.max_new_tokens,
             temperature=req.temperature,
             top_p=req.top_p,
-            repetition_penalty=1.05,
+            repetition_penalty=req.repetition_penalty,
+            no_repeat_ngram_size=req.no_repeat_ngram_size,
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
