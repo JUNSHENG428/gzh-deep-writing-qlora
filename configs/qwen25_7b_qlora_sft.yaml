@@ -1,0 +1,60 @@
+# ============================================================
+# Qwen2.5-7B-Instruct QLoRA SFT 训练配置
+# 硬件：单卡 RTX 5090D 32GB
+# 数据：358 训练 / 18 验证（公众号深度写作，COT 逆向蒸馏）
+# 用法（项目根目录执行，两个环境变量必须设置）：
+#   $env:PYTHONUTF8="1"; $env:PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+#   llamafactory-cli train configs/qwen25_7b_qlora_sft.yaml
+# 注意：cutoff_len=8192 会打满 32GB 显存，触发 Windows WDDM 换页到内存，
+#       速度掉 20 倍（试跑实测），故定为 6144（覆盖 95.5% 样本）
+# ============================================================
+
+### ---- 模型 ----
+model_name_or_path: models/Qwen2.5-7B-Instruct
+trust_remote_code: true
+# QLoRA 的「Q」：基座权重压成 4bit NF4 冻结，只训 LoRA
+quantization_bit: 4
+quantization_method: bnb
+
+### ---- 微调方法 ----
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16          # 低秩矩阵的秩，小数据集防过拟合的甜点值
+lora_alpha: 32         # 干预强度 = alpha/rank = 2（约定俗成）
+lora_dropout: 0.05     # LoRA 层的 dropout，小数据集加一点正则
+lora_target: all       # 挂到全部线性层（QLoRA 论文结论：比只挂注意力好）
+
+### ---- 数据 ----
+dataset: gzh_writing_train
+eval_dataset: gzh_writing_val
+dataset_dir: data/final          # 该目录下的 dataset_info.json 定义了数据集
+template: qwen                   # Qwen2.5 的对话模板（<|im_start|>...）
+cutoff_len: 6144                 # 覆盖 95.5% 样本；8192 会触发显存换页（见文件头注释）
+overwrite_cache: true
+preprocessing_num_workers: 1     # Windows 多进程易出问题，单进程即可
+
+### ---- 训练超参 ----
+per_device_train_batch_size: 1   # 单条前向，显存最省
+gradient_accumulation_steps: 8   # 等效 batch=8；358条/8 ≈ 45步/轮
+learning_rate: 1.0e-4            # LoRA 典型值（比全量微调高一个数量级）
+num_train_epochs: 3.0            # 共约 134 步；盯 eval_loss 防过拟合
+lr_scheduler_type: cosine        # 余弦退火，末期学习率平滑降到 0
+warmup_ratio: 0.05               # 前 5% 步数线性升温，避免初期梯度剧烈
+bf16: true                       # 5090D 原生支持 bf16
+optim: paged_adamw_8bit          # 8bit 优化器状态 + 分页防 OOM 尖峰
+gradient_checkpointing: true     # 反向重算激活，省 60-70% 激活显存
+flash_attn: sdpa                 # Windows 无 flash-attn，用 PyTorch 原生 SDPA
+max_grad_norm: 1.0               # 梯度裁剪，防个别长样本梯度爆炸
+
+### ---- 评估与保存 ----
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 25                   # 约每半轮评估一次 eval_loss
+save_steps: 25                   # 与评估同步存 checkpoint，方便回退
+save_total_limit: 5              # 最多留 5 个 checkpoint，防磁盘爆
+output_dir: output/qwen25-7b-gzh-qlora
+logging_steps: 5
+plot_loss: true                  # 训练完自动画 loss 曲线图
+overwrite_output_dir: true
+report_to: none

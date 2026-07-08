@@ -1,0 +1,33 @@
+# ===== 密钥与本地环境 =====
+.env
+venv/
+*.env.local
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# ===== 大文件：模型权重与训练产物（不进 git，走 HuggingFace）=====
+models/
+output/
+*.safetensors
+*.bin
+*.gguf
+
+# ===== 第三方源码（自行 clone）=====
+LLaMA-Factory/
+
+# ===== 数据：爬取的公众号原文与派生训练集（版权原因不公开）=====
+# 默认忽略整个 data/，再放行提示词模板与少量脱敏样例
+data/*
+!data/prompts/
+!data/examples/
+!data/examples/sample.jsonl
+
+# ===== 杂项 =====
+0.12.0
+terminals/
+*.log
+.DS_Store

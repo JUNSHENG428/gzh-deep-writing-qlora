@@ -1,0 +1,7 @@
+请为以下选题生成一条训练样本：
+
+主题：{topic}
+受众：{audience}
+要求：{requirements}
+
+直接输出 <thinking> 和 <article> 两个标签块，不要加任何前言或后记。

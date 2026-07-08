@@ -1,0 +1,29 @@
+# 中文公众号深度写作模型微调 —— 依赖清单
+# 硬件：单卡 RTX 5090D (Blackwell/sm_120)，需 CUDA 12.8 版 PyTorch
+#
+# 安装步骤：
+#   1) 先装对应 CUDA 的 PyTorch（Blackwell 必须 cu128 及以上）：
+#      pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   2) 再装本文件其余依赖：
+#      pip install -r requirements.txt
+#   3) 训练框架 LLaMA-Factory 需单独 clone 后 pip install -e .
+
+# --- 训练 / 微调核心 ---
+transformers>=4.55,<=5.7
+peft>=0.18,<=0.18.1
+trl>=0.18,<=0.24
+accelerate>=1.3,<=1.11
+datasets>=2.16,<=4.0
+bitsandbytes>=0.45.3          # 4bit NF4 量化，Blackwell 需 0.45.3+
+
+# --- 数据处理 / 蒸馏 ---
+openai>=1.0                    # DeepSeek / Kimi / Qwen 的 OpenAI 兼容接口
+google-genai>=0.3             # Gemini SDK
+python-dotenv>=1.0            # .env 读取 API Key
+
+# --- 模型下载 / 发布 ---
+modelscope>=1.38              # 国内下载 Qwen2.5-7B 基座
+huggingface_hub>=0.24         # 推送适配器到 HF Hub
+
+# --- 工具 ---
+numpy
