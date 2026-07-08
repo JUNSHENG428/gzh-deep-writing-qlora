@@ -1,0 +1,20 @@
+# ============================================================
+# 6-A：合并 LoRA 适配器到基座，导出完整模型
+# 原理：fp16 加载基座 → 挂载适配器 → W' = W + (alpha/r)·BA → 保存
+#       必须在 fp16/bf16 下合并（不能在 4bit 上合并，否则引入量化误差）
+# 用法：
+#   llamafactory-cli export configs/merge_lora.yaml
+# 产物：models/qwen25-7b-gzh-merged/（约 15GB，独立可用模型）
+# ============================================================
+
+### 模型与适配器
+model_name_or_path: models/Qwen2.5-7B-Instruct
+adapter_name_or_path: output/qwen25-7b-gzh-qlora-v2   # 用清洗后训练的 v2
+template: qwen
+trust_remote_code: true
+
+### 导出设置
+export_dir: models/qwen25-7b-gzh-merged
+export_size: 5                # 分片大小(GB)，每个 safetensors 分片≤5GB
+export_device: cpu            # 合并在 CPU 内存进行，避免占用显存（更稳）
+export_legacy_format: false   # 用 safetensors 格式（更安全、加载快）

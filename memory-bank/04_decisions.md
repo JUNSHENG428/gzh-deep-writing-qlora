@@ -1,6 +1,6 @@
 # 关键技术决策记录（追加式，别推翻已定决策）
 
-最后更新：2026-07-07
+最后更新：2026-07-08
 
 ## D1. 微调方案：QLoRA on Qwen2.5-7B-Instruct（项目启动时定）
 - 单卡 32GB 唯一现实选择；LLaMA-Factory 作为训练框架
@@ -29,3 +29,27 @@
 
 ## D6. Windows 编码坑（2026-07-07）
 - 控制台 GBK 导致中文乱码/写文件报错，所有脚本用 `python -X utf8` 运行
+
+## D7. 批量蒸馏教师改用 Qwen+Kimi 混合，而非 Gemini（2026-07-07，修正 D3）
+- A/B 测试 Gemini 分最高，但全量 375 篇考虑限流/成本/稳定性，实际采用：
+  超长文（>8000 字）给 kimi（长上下文），其余按文件名哈希 ~70% qwen / 30% kimi
+- 每条记录 teacher 字段，保留教师消融实验的可能；Gemini 转做评估裁判（避免既当教练又当裁判）
+
+## D8. 训练直接在 Windows 5090D 本机进行（2026-07-07，修正最初计划）
+- 最初设想的 Linux 训练机不存在；实测 Windows + venv + LLaMA-Factory 可行
+- 代价：WDDM 显存换页问题 → cutoff_len 从 8192 降到 6144（覆盖 95.5% 样本，见 D9）
+
+## D9. 关键超参定案（2026-07-07，configs/qwen25_7b_qlora_sft.yaml）
+- lora_rank=16 / alpha=32（放大系数 2）/ dropout=0.05 / lora_target=all
+- cutoff_len=6144（8192 触发 WDDM 换页速度掉 20 倍，实测）
+- batch=1 × grad_accum=8（有效 batch 8），lr=1e-4，3 epoch，峰值显存 26GB
+
+## D10. 数据消融：v1（未清洗）vs v2（清洗后）双版本训练（2026-07-07）
+- 发现训练集 output 里残留公众号版式噪声（污染率 67%）→ 写 scan/clean_final_boilerplate 清洗到 4.5%
+- 故意保留 v1 做对照：v1 综合分 2.09 低于基座 2.44，v2 2.47 反超 → 简历级消融结论
+- data/final/backup_v1/ 保留清洗前数据
+
+## D11. 发布策略（2026-07-07/08）
+- LoRA 适配器发 HuggingFace（junshengma/qwen2.5-7b-gzh-writing-qlora）
+- 代码开源 GitHub（Apache-2.0），爬取语料与派生训练集因版权不入库，只给格式样例
+- 合并模型（merge_lora.yaml，CPU 上 fp16 合并）留本地 models/qwen25-7b-gzh-merged 供后续量化部署

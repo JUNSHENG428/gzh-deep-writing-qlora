@@ -98,6 +98,27 @@ python scripts/gen_local.py --tag v2 --adapter output/qwen25-7b-gzh-qlora-v2
 python scripts/eval_compare.py --judge
 ```
 
+## 部署为 API 服务
+
+微调后的模型可合并、量化并封装成 HTTP 服务（详见 [`serve/README.md`](serve/README.md)）：
+
+```bash
+# 1. 合并 LoRA 到基座
+llamafactory-cli export configs/merge_lora.yaml
+
+# 2a. 本地起服务（4bit 加载，约 6GB 显存）
+uvicorn serve.app:app --host 127.0.0.1 --port 8010
+
+# 2b. 或 Docker 一键部署（需 nvidia-container-toolkit）
+docker compose up -d --build
+
+# 3. 调用
+curl -X POST http://localhost:8010/generate -H "Content-Type: application/json" \
+  -d '{"topic":"AI Agent 会取代 App 吗","max_new_tokens":3072}'
+```
+
+提供 `/generate`（一次性）与 `/generate/stream`（SSE 流式）两个接口。
+
 ## 数据格式（Alpaca JSONL）
 
 ```json

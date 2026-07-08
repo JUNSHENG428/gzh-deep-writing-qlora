@@ -1,43 +1,46 @@
 # 当前进度与下一步（最常更新，动手前先读这份）
 
-最后更新：2026-07-07 17:30（UTC+8）
+最后更新：2026-07-08 10:20（UTC+8）
 
-## 当前状态快照
-- 数据量：`data/raw` 1096 篇 → 清洗后 `data/cleaned` 843 篇 → 去重移出 13 篇
-- **打分进行中**：`score_articles.py` 正在终端后台跑（17:16 启动，命令
-  `venv\Scripts\python.exe -X utf8 scripts\score_articles.py`），
-  `article_scores.jsonl` 已写入 367/843 条，支持断点续跑，中断了直接重跑同一命令即可
-- 已打分部分的分布（趋势参考）：
-  - genre：深度评论 202 / 拼盘杂烩 79 / 软文广告 66 / 新闻报道 13 / 访谈 7
-  - depth：4 分 151 / 3 分 89 / 2 分 69 / 1 分 56 / 5 分 2
-  - → 按此比例，843 篇里「深度评论且 depth≥4」预计 300-400 篇，target 700 可能不够，
-    届时要么降档补足、要么接受更小但更精的数据集
-- 反向蒸馏：仅试跑（gemini 3 篇、deepseek 3 篇），**全量还没跑**
-- `data/selected/` 尚不存在（select_articles.py 还没运行）
-- 训练侧：还没开始。LLaMA-Factory / 训练机环境未动工（check_env.py 要在 Linux 5090D 机器上跑）
+## 大局：核心闭环已完成 ✅
+数据工程 → 蒸馏 → QLoRA 训练（v1/v2 两版）→ 三方评估 → LoRA 合并导出 → 发布 HuggingFace + GitHub，全部走通。
+项目进入「收尾/迭代」阶段。
 
-## 已完成 ✅
-1. 四厂商 API 打通（llm_client.py + test_providers.py）
-2. 手工样本 manual_001 组装、Gemini 单条正向蒸馏验证
-3. 教师模型 A/B 测试 → 选定 Gemini 做反向蒸馏主力（见 04_decisions D3）
-4. 全量文章清洗（含多轮残留模式修补：评论区、微信链接、图片、JS 链接等）
-5. 去重完成
-6. 反向蒸馏脚本 + 断点续跑机制验证通过
+## 关键成果
+- 数据：1096 raw → 843 cleaned → 375 selected → **train 358 / val 18**（data/final/）
+- 训练两版（各 3 epoch，~35-42 分钟，峰值显存 26GB）：
+  - v1 = 未清洗数据（`output/qwen25-7b-gzh-qlora`），eval_loss 2.546
+  - v2 = 清洗版式噪声后（`output/qwen25-7b-gzh-qlora-v2`），eval_loss 2.574
+- 评估（eval_compare.py --judge，Gemini 裁判）：
+  | 指标 | base | v1 | v2 |
+  |---|---|---|---|
+  | 综合质量分(1-5) | 2.44 | 2.09 | **2.47** |
+  | 版式垃圾数/篇 | 0.06 | 1.33 | **0.11** |
+  | 论据充分度 | 1.38 | 1.53 | **1.62** |
+  | 平均正文字数 | 1752 | 2716 | 2878 |
+- **核心发现（简历亮点）**：数据消融实验证明 garbage in garbage out——v1 学入版式噪声综合分反低于基座，清洗后 v2 反超基座
+- LoRA 已合并导出：`models/qwen25-7b-gzh-merged`（~15GB）
+- 已发布：HuggingFace 适配器 junshengma/qwen2.5-7b-gzh-writing-qlora；GitHub 仓库已推送（2 commits），README 完整
 
-## 下一步（按顺序）
-1. **等打分跑完**（843 篇，剩约 476 篇；deepseek-v4-flash 6 并发）。
-   完成后用 `show_scores.py` 看分布
-2. 跑 `select_articles.py --target 700`（若核心档不够 700，先看 selection_report.txt 再决定降不降档）
-3. 对 `data/selected/` 全量反向蒸馏：
-   `python -X utf8 scripts\reverse_distill.py --provider gemini --limit 0`
-   （注意 Gemini 免费额度/限流，量大可分天跑或 deepseek 分担一部分）
-4. 蒸馏产物质检 + 合并成最终 SFT 训练集（Alpaca JSONL）
-5. 转战 Linux 训练机：跑 `check_env.py`，装 LLaMA-Factory，写 QLoRA 配置
-   （4-bit、gradient_checkpointing、paged_adamw_8bit、小 batch + 梯度累积，显存预估 <32GB）
-6. 训练 → 评估（微调前后 ROUGE + 人工评分对比，留简历素材）
+## 昨天（07-07 晚）~ 今早动态
+- 打分 843 篇全量完成；筛出 375 篇（核心档 362 + 候补 13，字数中位 3113）
+- batch_reverse_distill 375 篇全部蒸馏完成（qwen 为主 + kimi 超长文）
+- 训练、评估、合并、发布均已完成
+- 今早（07-08）在装 GitHub CLI 并做 `gh auth login`（网页授权流程，可能未完成——如果用户提 gh/GitHub 相关需求，先 `gh auth status` 确认）
 
-## 注意事项 / 坑
-- Windows 跑脚本必须 `-X utf8`，否则 GBK 乱码
-- 打分/蒸馏都是逐条追加 + manifest 断点续跑，重跑不会浪费 token
-- 不要在 Windows/Mac 上跑实际训练，只做数据工程
+## 未提交的改动
+- `configs/merge_lora.yaml` 还没 commit（git status 显示 untracked）
+
+## 可能的下一步（等用户定，勿擅自开工）
+1. 部署链路收尾：merged 模型 → GPTQ/AWQ 量化 → FastAPI 封装 → Docker（.cursorrules 里的既定远期路径，还没做）
+2. 质量提升迭代：扩充数据量（>358 条）、调 lora_rank/epoch、教师消融（利用 teacher 字段）
+3. GitHub 仓库完善（gh CLI 刚装，可能想做 release / PR 流程）
+4. 提交 `configs/merge_lora.yaml`
+
+## 注意事项 / 坑（历史教训）
+- Windows 必设 `PYTHONUTF8=1`，训练/推理加 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+- cutoff_len 用 6144，8192 会 WDDM 换页速度掉 20 倍
+- LoRA 合并必须在 fp16/bf16 下做（merge_lora.yaml 用 CPU 合并），不能在 4bit 上合并
+- Gemini 裁判偶发空响应/限流，eval_compare 有 WARN 跳过逻辑
+- 7B 模型有事实幻觉；思考深度绝对分仍低（1.75/5），受限于小数据+rank16
 - 用户要求「先教后做」：给方案前先解释原理和取舍（见 .cursorrules）

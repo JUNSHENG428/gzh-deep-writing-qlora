@@ -1,0 +1,12 @@
+# 构建镜像时排除大文件/无关文件，加快构建
+venv/
+models/
+output/
+data/
+LLaMA-Factory/
+.git/
+__pycache__/
+*.pyc
+.env
+terminals/
+*.log

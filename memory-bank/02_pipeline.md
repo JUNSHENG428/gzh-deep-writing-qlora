@@ -1,43 +1,55 @@
 # 数据管线与脚本对照（脚本变动时更新）
 
-最后更新：2026-07-07
+最后更新：2026-07-08
 
-所有脚本在 `scripts/`，运行前激活 venv，并加 `-X utf8`：
-`C:\Users\7\Desktop\gzhllm\venv\Scripts\python.exe -X utf8 scripts\xxx.py`
+所有脚本在 `scripts/`，运行前激活 venv 并设 `$env:PYTHONUTF8="1"`（或 `python -X utf8`）。
 
-## 管线总览
+## 管线总览（全部已跑通）
 
 ```
-data/raw/*.md（抓取的公众号原文）
-  → [2-D-1] clean_raw_articles.py  清洗 → data/cleaned/
-  → [2-E-1] dedup_articles.py      去重（MinHash Jaccard>0.7）→ 重复移入 data/duplicates/
-  → [2-E-2] score_articles.py      质量打分（deepseek-v4-flash，depth/evidence/genre/topic）
-                                    → data/generated/article_scores.jsonl（断点续跑）
-  → [2-E-3] select_articles.py     按分筛精选 → data/selected/ + selection_report.txt
-  → [2-D-2] reverse_distill.py     反向蒸馏：真文章 → 反推 input+thinking
-                                    → data/generated/reverse_distilled_{provider}.jsonl
-                                    （每厂商独立 manifest 断点续跑）
-  → SFT 训练数据（Alpaca JSONL，output = <thinking>…</thinking><article>原文</article>）
+data/raw/*.md（1096 篇公众号原文）
+  → [2-D-1] clean_raw_articles.py     清洗 → data/cleaned/（843）
+  → [2-E-1] dedup_articles.py         去重 → 13 篇移入 data/duplicates/
+  → [2-E-2] score_articles.py         DeepSeek flash 打分 → article_scores.jsonl（843 全量完成）
+  → [2-E-3] select_articles.py        筛选 → data/selected/（375 篇）
+  → [2-E-4] batch_reverse_distill.py  批量反向蒸馏（~70% qwen + 30% kimi，带 teacher 字段）
+                                       → reverse_distilled_selected.jsonl（375 条）
+  → [2-F]   merge_and_split.py        合并所有数据源 + 质量闸门 + 去重
+                                       → data/final/train.jsonl(358) + val.jsonl(18)
+  → [5-A]   scan_boilerplate.py       诊断训练集残留版式噪声
+            clean_final_boilerplate.py 清洗 data/final（旧版备份到 backup_v1/）→ v2 数据集
+  → [4]     llamafactory-cli train configs/qwen25_7b_qlora_sft.yaml  → output/…-v2
+  → [5-B]   gen_local.py --tag base|v1|v2   本地批量生成（val 集 prompt）
+            eval_compare.py --judge          ROUGE-L + 版式噪声 + Gemini 裁判
+  → [6-A]   llamafactory-cli export configs/merge_lora.yaml → models/qwen25-7b-gzh-merged
 ```
 
 ## 各脚本速查
 
 | 脚本 | 阶段 | 作用 |
 |------|------|------|
-| `check_env.py` | Step 1 | 训练机 GPU/CUDA/PyTorch 检查（5090D sm_120 专用，在 Linux 训练机跑） |
-| `assemble_manual_001.py` | 2-B | 手写 thinking+article 组装为第一条 Alpaca 样本 |
-| `distill_one_gemini.py` | 2-C | Gemini 正向蒸馏单条试跑（已验证可行） |
-| `clean_raw_articles.py` | 2-D-1 | 清洗 raw→cleaned：删图片/链接/日期/推荐尾巴，<1200 字丢弃 |
-| `reverse_distill.py` | 2-D-2 | 反向蒸馏主脚本，`--provider gemini` `--limit 0`（全部） |
-| `dedup_articles.py` | 2-E-1 | 内容去重，保留字数最多的版本 |
-| `score_articles.py` | 2-E-2 | 批量质检打分（6 并发，只发前 3000 字省 token） |
-| `select_articles.py` | 2-E-3 | 筛选：depth≥4 且 genre=深度评论 直接入选；depth=3 且 evidence≥4 补足；`--target 700` |
-| `show_scores.py` | 辅助 | 查看打分分布 |
+| `check_env.py` | 1 | GPU/CUDA/PyTorch/bitsandbytes 自检（5090D sm_120） |
+| `clean_raw_articles.py` | 2-D-1 | raw→cleaned：删图片/链接/推荐尾巴，<1200 字丢弃 |
+| `dedup_articles.py` | 2-E-1 | MinHash Jaccard>0.7 去重 |
+| `score_articles.py` | 2-E-2 | deepseek-v4-flash 打分 depth/evidence/genre/topic，断点续跑 |
+| `select_articles.py` | 2-E-3 | depth≥4 深度评论直入 + depth=3 evidence≥4 候补 |
+| `reverse_distill.py` | 2-D-2 | 反向蒸馏单厂商版（早期，已被 batch 版取代） |
+| `batch_reverse_distill.py` | 2-E-4 | 批量蒸馏：超长文给 kimi，其余按 hash 70% qwen/30% kimi；4 线程；manifest 断点 |
+| `merge_and_split.py` | 2-F | 合并 5 个数据源、按 article 指纹去重、质量闸门、切 train/val |
+| `measure_tokens.py` | 3-C | 用 Qwen 真实分词器测数据集 token 长度（定 cutoff_len 依据） |
+| `load_model_4bit.py` | 3-B | 4bit NF4 加载基座 + 显存/推理验证 |
+| `test_finetuned.py` | 4 | 基座 4bit + LoRA 适配器挂载，微调前后同 prompt 对比 |
+| `scan_boilerplate.py` | 5-A | 扫描 data/final 残留版式噪声（诊断） |
+| `clean_final_boilerplate.py` | 5-A | 清洗训练集版式噪声（行级删除+尾部截断+字数闸门） |
+| `gen_local.py` | 5-B | base/v1/v2 三方在 val 集上批量生成，固定 temperature/seed |
+| `eval_compare.py` | 5-B | ROUGE-L(字符) + 版式噪声统计 + Gemini 裁判 4 维打分 |
 | `llm_client.py` | 基础 | 统一 4 厂商 chat() 接口 |
-| `test_providers.py` | 辅助 | 4 家 API 连通性测试 |
-| `ab_test_providers.py` | 辅助 | 教师模型 A/B 对比（已完成，见 04_decisions） |
+| `test_providers.py` / `ab_test_providers.py` | 辅助 | API 连通性 / 教师 A/B 测试 |
+| `show_scores.py` | 辅助 | 打分分布查看 |
+| `assemble_manual_001.py` / `distill_one_gemini.py` | 早期 | 手工样本 / Gemini 单条试跑 |
 
 ## 数据格式约定
-- Alpaca JSONL，固定 instruction：「你是一位科技领域的深度评论员。请先分析技术趋势背后的产业逻辑与争议点，再撰写一篇有论据、有观点、不蹭热度的科技评论文章。」
-- output 结构：`<thinking>动笔前构思（第一人称"打算/准备"口吻，300-500 字，5 要点：核心矛盾/读者痛点/文章结构/语气定位/关键素材）</thinking>` + `<article>文章正文</article>`
-- 反向蒸馏中 article 必须是原文一字不改；thinking 若出现读后感口吻（"本文/这篇文章"等）会被质量过滤
+- Alpaca JSONL，固定 instruction：「你是一位科技领域的深度评论员……」
+- output：`<thinking>`第一人称"打算/准备"口吻构思（5 要点：核心矛盾/读者痛点/文章结构/语气定位/关键素材）`</thinking>` + `<article>`原文一字不改`</article>`
+- 蒸馏记录带 `teacher` 字段，支持后续"哪家教师效果好"消融
+- `data/final/dataset_info.json` 注册了 `gzh_writing_train` / `gzh_writing_val` 供 LLaMA-Factory 使用
