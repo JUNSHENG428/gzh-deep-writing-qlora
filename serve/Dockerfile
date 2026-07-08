@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# 普通依赖走清华 PyPI 镜像（国内加速），torch 单独走官方 cu128 源
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 先装 PyTorch（cu128），单独一层便于缓存
 RUN pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cu128
